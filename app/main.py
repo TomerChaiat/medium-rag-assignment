@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException
+import json
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
 
 from app.config import CHUNK_SIZE, OVERLAP_RATIO, TOP_K
 from app.rag import answer_question
@@ -291,14 +292,33 @@ def prompt_docs():
     return home()
 
 
+async def extract_question(request: Request) -> str:
+    body = await request.body()
 
-class PromptRequest(BaseModel):
-    question: str
+    if not body:
+        question = request.query_params.get("question", "")
+        return question.strip()
+
+    body_text = body.decode("utf-8").strip()
+
+    try:
+        payload = json.loads(body_text)
+    except json.JSONDecodeError:
+        payload = None
+
+    if isinstance(payload, dict):
+        question = payload.get("question", "")
+        return str(question).strip()
+
+    raise HTTPException(
+        status_code=400,
+        detail='Request body must be JSON with a "question" field.',
+    )
 
 
 @app.post("/api/prompt")
-def prompt(request: PromptRequest):
-    question = request.question.strip()
+async def prompt(request: Request):
+    question = await extract_question(request)
 
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
